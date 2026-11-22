@@ -3,7 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 
 const STORAGE_PREFIX = 'kf2-tracker-v1:'
 const LAST_PROFILE_KEY = 'kf2-tracker-last-profile'
-const MY_PROFILE = 'https://steamcommunity.com/profiles/76561198055880724/'
+
+function readSavedProfile() {
+  try {
+    return localStorage.getItem(LAST_PROFILE_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
 
 // Referencia estable: si el array vacío viviera dentro del hook, `?? []`
 // crearía uno nuevo en cada render y los useMemo se re-ejecutarían sin motivo.
@@ -37,8 +44,22 @@ function toUnlockedIds(body) {
 }
 
 async function fetchProfile(target) {
-  const res = await fetch('/api/achievements?profile=' + encodeURIComponent(target))
-  const body = await res.json()
+  let res
+  try {
+    res = await fetch('/api/achievements?profile=' + encodeURIComponent(target))
+  } catch {
+    throw new Error(
+      'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
+    )
+  }
+
+  let body
+  try {
+    body = await res.json()
+  } catch {
+    throw new Error('El servidor devolvió una respuesta no válida. Inténtalo de nuevo.')
+  }
+
   if (!res.ok) throw new Error(body?.error || `Error ${res.status}`)
   return body
 }
@@ -46,24 +67,22 @@ async function fetchProfile(target) {
 // Capa de datos del perfil: input del usuario, carga desde la API,
 // progreso manual (completed) y su persistencia en localStorage.
 export function useProfileData() {
-  const [profileInput, setProfileInput] = useState(() => {
-    try {
-      return localStorage.getItem(LAST_PROFILE_KEY) || MY_PROFILE
-    } catch {
-      return MY_PROFILE
-    }
-  })
+  const [savedProfile] = useState(readSavedProfile)
+  const [profileInput, setProfileInput] = useState(savedProfile)
   const [completed, setCompleted] = useState(new Set())
 
   // El input es solo un borrador; este ref guarda el perfil realmente pedido
   // a la API para que escribir en el campo no dispare nada por sí solo.
-  const targetRef = useRef(profileInput)
+  // Si ya hay un perfil guardado, se carga automáticamente; si no, la app
+  // espera a que el usuario ingrese el suyo.
+  const targetRef = useRef(savedProfile)
 
   // La carga inicial la dispara useQuery (sin useEffect), que además
   // deduplica peticiones y evita carreras/dobles fetch.
   const profileQuery = useQuery({
     queryKey: ['profile'],
     queryFn: () => fetchProfile(targetRef.current),
+    enabled: Boolean(savedProfile),
   })
   const { refetch } = profileQuery
   const data = profileQuery.data
@@ -81,6 +100,7 @@ export function useProfileData() {
       const target = (value ?? profileInput).trim()
       if (!target) return false
       targetRef.current = target
+      setProfileInput(target)
       const result = await refetch()
       if (result.error) return false
       try {
