@@ -1,12 +1,43 @@
 import { DIFF_META } from '../difficulties.js'
 import {
   ArrowUpDownIcon,
+  BoltIcon,
   ChevronDownIcon,
+  ListChecksIcon,
   SearchIcon,
   XIcon,
 } from './icons.jsx'
 
+function ViewTab({ active, onClick, icon: TabIcon, label, badge, title }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      title={title}
+      className={`inline-flex h-full items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none ${
+        active ? 'bg-red-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+      }`}
+    >
+      <TabIcon className="size-3.5" />
+      {label}
+      {badge != null && (
+        <span
+          className={`rounded px-1 text-[10px] font-bold tabular-nums ${
+            active ? 'bg-white/20 text-white' : 'bg-white/10 text-zinc-400'
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+    </button>
+  )
+}
+
 export default function FilterBar({
+  view,
+  onViewChange,
+  comboCount,
   query,
   onQueryChange,
   showOnlyPending,
@@ -15,6 +46,7 @@ export default function FilterBar({
   onClearDiff,
   visibleCount,
   totalCount,
+  countNoun,
   sortBy,
   onSortChange,
   hasFilters,
@@ -24,14 +56,42 @@ export default function FilterBar({
     <div className="mt-8 lg:sticky lg:top-16 lg:z-20">
       <div className="border-y border-white/5 bg-zinc-950/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2.5 px-4 py-3 sm:px-6">
+          <div
+            role="group"
+            aria-label="Vista de logros"
+            className="inline-flex h-10 shrink-0 items-center gap-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-0.5"
+          >
+            <ViewTab
+              active={view === 'all'}
+              onClick={() => onViewChange('all')}
+              icon={ListChecksIcon}
+              label="Logros"
+              title="Ver todos los logros"
+            />
+            <ViewTab
+              active={view === 'combos'}
+              onClick={() => onViewChange('combos')}
+              icon={BoltIcon}
+              label="Una partida"
+              badge={comboCount}
+              title="Logros que se desbloquean varios a la vez en una sola partida"
+            />
+          </div>
+
           <div className="relative min-w-0 basis-full sm:max-w-xs sm:flex-1 sm:basis-auto">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
             <input
               type="search"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              aria-label="Buscar logros por nombre o descripción"
-              placeholder="Buscar logro o descripción…"
+              aria-label={
+                view === 'combos'
+                  ? 'Buscar combos por mapa o logro'
+                  : 'Buscar logros por nombre o descripción'
+              }
+              placeholder={
+                view === 'combos' ? 'Buscar mapa o logro…' : 'Buscar logro o descripción…'
+              }
               autoComplete="off"
               spellCheck="false"
               className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.04] pr-9 pl-9 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 hover:border-white/20 focus:border-red-500/70 focus:bg-white/[0.06] focus:ring-4 focus:ring-red-500/15 [&::-webkit-search-cancel-button]:appearance-none"
@@ -70,21 +130,23 @@ export default function FilterBar({
             Solo pendientes
           </button>
 
-          <label className="relative inline-flex h-10 shrink-0 items-center">
-            <span className="sr-only">Ordenar logros</span>
-            <ArrowUpDownIcon className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-500" />
-            <select
-              value={sortBy}
-              onChange={(event) => onSortChange(event.target.value)}
-              className="h-10 appearance-none rounded-lg border border-white/10 bg-white/[0.04] pr-8 pl-8 text-xs font-medium text-zinc-300 outline-none transition hover:border-white/20 focus:border-red-500/70 focus:ring-4 focus:ring-red-500/15 [&>option]:bg-zinc-900 [&>option]:text-zinc-100"
-            >
-              <option value="default">Orden original</option>
-              <option value="rarity">Más raros</option>
-              <option value="pending">Pendientes primero</option>
-              <option value="name">Nombre A–Z</option>
-            </select>
-            <ChevronDownIcon className="pointer-events-none absolute right-2.5 size-3.5 text-zinc-500" />
-          </label>
+          {view === 'all' && (
+            <label className="relative inline-flex h-10 shrink-0 items-center">
+              <span className="sr-only">Ordenar logros</span>
+              <ArrowUpDownIcon className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-500" />
+              <select
+                value={sortBy}
+                onChange={(event) => onSortChange(event.target.value)}
+                className="h-10 appearance-none rounded-lg border border-white/10 bg-white/[0.04] pr-8 pl-8 text-xs font-medium text-zinc-300 outline-none transition hover:border-white/20 focus:border-red-500/70 focus:ring-4 focus:ring-red-500/15 [&>option]:bg-zinc-900 [&>option]:text-zinc-100"
+              >
+                <option value="default">Orden original</option>
+                <option value="rarity">Más raros</option>
+                <option value="pending">Pendientes primero</option>
+                <option value="name">Nombre A–Z</option>
+              </select>
+              <ChevronDownIcon className="pointer-events-none absolute right-2.5 size-3.5 text-zinc-500" />
+            </label>
+          )}
 
           {activeDiff !== 'Todas' && (
             <button
@@ -113,8 +175,9 @@ export default function FilterBar({
               </button>
             )}
             <span aria-live="polite" className="text-xs text-zinc-400 tabular-nums">
-              <strong className="font-semibold text-zinc-200">{visibleCount}</strong> de {totalCount}
-              <span className="sr-only"> logros en vista</span>
+              <strong className="font-semibold text-zinc-200">{visibleCount}</strong> de {totalCount}{' '}
+              {countNoun}
+              <span className="sr-only"> en vista</span>
             </span>
           </div>
         </div>

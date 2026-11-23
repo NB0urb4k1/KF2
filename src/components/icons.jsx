@@ -166,6 +166,14 @@ export function ListChecksIcon(props) {
   )
 }
 
+export function BoltIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M13 2 4.5 13.5H11l-1 8.5 9-12h-6.5L13 2Z" />
+    </Icon>
+  )
+}
+
 export function Spinner({ className = 'size-4' }) {
   return (
     <span

@@ -1,14 +1,19 @@
 import { useCallback, useMemo, useState } from 'react'
 import { DIFFICULTIES } from './difficulties.js'
+import { COMBOS } from './data/combos.js'
 import { useProfileData } from './hooks/useProfileData.js'
 import AppHeader from './components/AppHeader.jsx'
 import AchievementList from './components/AchievementList.jsx'
 import Background from './components/Background.jsx'
 import BrandMark from './components/BrandMark.jsx'
+import ComboList from './components/ComboList.jsx'
 import FilterBar from './components/FilterBar.jsx'
 import Footer from './components/Footer.jsx'
 import ProfileForm from './components/ProfileForm.jsx'
 import { AlertIcon, Spinner } from './components/icons.jsx'
+
+// Orden de dificultad para deducir en qué dificultad conviene hacer cada combo.
+const DIFF_RANK = { Normal: 1, Hard: 2, Suicidal: 3, 'Hell on Earth': 4 }
 
 // Búsqueda tolerante a mayúsculas y acentos: "paris" encuentra "París".
 function normalizeText(value) {
@@ -34,6 +39,7 @@ export default function App() {
   } = useProfileData()
 
   // Filtros y orden de la vista (estado de la vista, no de los datos)
+  const [view, setView] = useState('all')
   const [activeDiff, setActiveDiff] = useState('Todas')
   const [query, setQuery] = useState('')
   const [showOnlyPending, setShowOnlyPending] = useState(false)
@@ -43,6 +49,7 @@ export default function App() {
   const submitProfile = useCallback(async () => {
     const ok = await loadProfile()
     if (!ok) return
+    setView('all')
     setActiveDiff('Todas')
     setQuery('')
     setShowOnlyPending(false)
@@ -50,7 +57,15 @@ export default function App() {
   }, [loadProfile])
 
   const toggleDiff = useCallback((difficulty) => {
+    // Los filtros de dificultad pertenecen a la lista de logros: al pulsar uno
+    // desde los combos, volvemos a la vista completa para que el filtro se vea.
+    setView('all')
     setActiveDiff((current) => (current === difficulty ? 'Todas' : difficulty))
+  }, [])
+
+  const changeView = useCallback((next) => {
+    setView(next)
+    if (next === 'combos') setActiveDiff('Todas')
   }, [])
 
   const clearDiffFilter = useCallback(() => setActiveDiff('Todas'), [])
@@ -131,6 +146,65 @@ export default function App() {
 
     return list
   }, [achievements, activeDiff, query, showOnlyPending, completed, sortBy])
+
+  // Combos de una sola partida: se cruzan los ids de data/combos.js con los
+  // logros que devuelve Steam, porque los textos y porcentajes vienen de la API.
+  const combos = useMemo(() => {
+    const byId = new Map(achievements.map((achievement) => [achievement.id, achievement]))
+
+    return COMBOS.map((combo) => {
+      const core = combo.coreIds.map((id) => byId.get(id)).filter(Boolean)
+      // Si Steam no devolvió los ids del combo, no hay nada que mostrar.
+      if (core.length < 2) return null
+
+      const bonus = (combo.bonusIds ?? []).map((id) => byId.get(id)).filter(Boolean)
+      const runDifficulty = core.reduce(
+        (best, achievement) =>
+          (DIFF_RANK[achievement.diff] ?? 0) > (DIFF_RANK[best] ?? 0) ? achievement.diff : best,
+        'Normal',
+      )
+      const pending = core.reduce(
+        (count, achievement) => count + (completed.has(achievement.id) ? 0 : 1),
+        0,
+      )
+
+      return {
+        ...combo,
+        achievements: core,
+        bonusAchievements: bonus,
+        runDifficulty,
+        pending,
+      }
+    }).filter(Boolean)
+  }, [achievements, completed])
+
+  const visibleCombos = useMemo(() => {
+    const q = normalizeText(query.trim())
+
+    const list = combos.filter((combo) => {
+      if (showOnlyPending && combo.pending === 0) return false
+
+      if (q) {
+        const haystack = [
+          combo.map,
+          combo.mode,
+          ...combo.achievements.flatMap((a) => [a.name, a.desc]),
+          ...combo.bonusAchievements.flatMap((a) => [a.name, a.desc]),
+        ]
+        if (!haystack.some((text) => normalizeText(text).includes(q))) return false
+      }
+
+      return true
+    })
+
+    // Primero los combos con más logros pendientes; los ya completos, al final.
+    return list.sort(
+      (a, b) =>
+        Number(a.pending === 0) - Number(b.pending === 0) ||
+        b.pending - a.pending ||
+        a.map.localeCompare(b.map, 'es'),
+    )
+  }, [combos, query, showOnlyPending])
 
   // ---------- Estado: sin datos (carga inicial o error) ----------
   if (!data) {
@@ -240,28 +314,43 @@ export default function App() {
       />
 
       <FilterBar
+        view={view}
+        onViewChange={changeView}
+        comboCount={combos.length}
         query={query}
         onQueryChange={setQuery}
         showOnlyPending={showOnlyPending}
         onShowOnlyPendingChange={setShowOnlyPending}
         activeDiff={activeDiff}
         onClearDiff={clearDiffFilter}
-        visibleCount={visible.length}
-        totalCount={totalAll}
+        visibleCount={view === 'combos' ? visibleCombos.length : visible.length}
+        totalCount={view === 'combos' ? combos.length : totalAll}
+        countNoun={view === 'combos' ? 'combos' : 'logros'}
         sortBy={sortBy}
         onSortChange={setSortBy}
         hasFilters={hasFilters}
         onClearFilters={clearFilters}
       />
 
-      <AchievementList
-        loading={loading}
-        visible={visible}
-        completed={completed}
-        onToggle={toggle}
-        hasFilters={hasFilters}
-        onClearFilters={clearFilters}
-      />
+      {view === 'combos' ? (
+        <ComboList
+          loading={loading}
+          combos={visibleCombos}
+          completed={completed}
+          onToggle={toggle}
+          hasFilters={hasFilters}
+          onClearFilters={clearFilters}
+        />
+      ) : (
+        <AchievementList
+          loading={loading}
+          visible={visible}
+          completed={completed}
+          onToggle={toggle}
+          hasFilters={hasFilters}
+          onClearFilters={clearFilters}
+        />
+      )}
 
       <Footer />
     </div>
